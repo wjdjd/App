@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Chat va Foydalanuvchilar</title>
+    <!-- Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        /* ASOSIY O'ZGARUVCHILAR */
+        :root {
+            --bg-color: #0e1621;
+            --header-bg: #17212b;
+            --sidebar-bg: #17212b;
+            --my-msg-bg: #2b5278;
+            --other-msg-bg: #182533;
+            --text-color: #ffffff;
+            --accent-color: #5288c1;
+            --border-color: #101921;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* LOGIN EKRANI */
+        #login-screen {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+        }
+        .login-box {
+            background: var(--header-bg);
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            width: 80%; max-width: 300px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .login-box input {
+            width: 100%; padding: 12px; margin: 15px 0;
+            background: #0e1621; border: 1px solid #2b5278;
+            color: white; border-radius: 8px; outline: none; box-sizing: border-box;
+        }
+        .login-box button {
+            width: 100%; padding: 12px;
+            background: var(--accent-color); color: white;
+            border: none; border-radius: 8px; font-weight: bold; cursor: pointer;
+        }
+
+        /* CHAT EKRANI */
+        #chat-screen {
+            display: none;
+            flex-direction: column;
+            height: 100%;
+            position: relative;
+        }
+
+        /* HEADER */
+        header {
+            background: var(--header-bg);
+            padding: 10px 15px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            z-index: 10;
+            justify-content: space-between;
+        }
+        
+        .header-left { display: flex; align-items: center; gap: 15px; }
+        .menu-btn { font-size: 24px; cursor: pointer; background: none; border: none; color: white; padding: 0; }
+        .chat-info h3 { margin: 0; font-size: 18px; }
+        .chat-info span { font-size: 12px; color: #7cb3f5; }
+
+        /* SIDEBAR (FOYDALANUVCHILAR) */
+        #sidebar {
+            position: fixed;
+            top: 0; left: -280px; /* Yashirin */
+            width: 280px; height: 100%;
+            background: var(--sidebar-bg);
+            z-index: 1000;
+            transition: left 0.3s ease;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.5);
+            display: flex;
+            flex-direction: column;
+        }
+        #sidebar.open { left: 0; }
+
+        .sidebar-header {
+            padding: 20px;
+            background: #232e3c;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .sidebar-header h2 { margin: 0; font-size: 20px; }
+        .sidebar-header p { margin: 5px 0 0; color: #7cb3f5; font-size: 14px; }
+
+        #user-list {
+            list-style: none;
+            padding: 0; margin: 0;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .user-item {
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-bottom: 1px solid #101921;
+            cursor: pointer;
+        }
+        .user-item:hover { background: #232e3c; }
+        .avatar {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            font-weight: bold; font-size: 18px; color: white;
+            text-transform: uppercase;
+        }
+        .user-name { font-size: 16px; font-weight: 500; }
+        
+        /* Backdrop (Sidebar orqasidagi qorong'u fon) */
+        #backdrop {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 900;
+            display: none;
+        }
+        #backdrop.active { display: block; }
+
+        /* XABARLAR */
+        #messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            background-image: radial-gradient(#1d2833 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        .message {
+            max-width: 75%; padding: 8px 12px;
+            border-radius: 12px; font-size: 16px; position: relative; word-wrap: break-word;
+        }
+        .my-message { align-self: flex-end; background: var(--my-msg-bg); border-bottom-right-radius: 2px; }
+        .other-message { align-self: flex-start; background: var(--other-msg-bg); border-bottom-left-radius: 2px; }
+        .message .sender { display: block; font-size: 12px; color: #7cb3f5; font-weight: bold; margin-bottom: 3px; }
+        .message .time { float: right; font-size: 10px; color: rgba(255,255,255,0.5); margin: 5px 0 0 8px; }
+
+        /* INPUT */
+        .input-area {
+            background: var(--header-bg); padding: 10px;
+            display: flex; gap: 10px; align-items: center;
+        }
+        .input-area input {
+            flex: 1; padding: 12px; border-radius: 20px;
+            border: none; background: #0e1621; color: white; outline: none;
+        }
+        .send-btn {
+            width: 45px; height: 45px; border-radius: 50%;
+            background: var(--accent-color); border: none; color: white;
+            font-size: 20px; cursor: pointer; display: flex; justify-content: center; align-items: center;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- LOGIN -->
+    <div id="login-screen">
+        <div class="login-box">
+            <h2>Chatga Kirish</h2>
+            <input type="text" id="username-input" placeholder="Ismingizni kiriting..." autocomplete="off">
+            <button onclick="login()">KIRISH</button>
+        </div>
+    </div>
+
+    <!-- CHAT -->
+    <div id="chat-screen">
+        <header>
+            <div class="header-left">
+                <button class="menu-btn" onclick="toggleSidebar()">☰</button>
+                <div class="chat-info">
+                    <h3>Umumiy Chat</h3>
+                    <span id="online-count">kutyapman...</span>
+                </div>
+            </div>
+        </header>
+
+        <div id="messages-container"></div>
+
+        <div class="input-area">
+            <input type="text" id="msg-input" placeholder="Xabar yozish..." autocomplete="off" onkeypress="handleEnter(event)">
+            <button class="send-btn" onclick="sendMessage()">➤</button>
+        </div>
+    </div>
+
+    <!-- SIDEBAR (FOYDALANUVCHILAR) -->
+    <div id="backdrop" onclick="toggleSidebar()"></div>
+    <div id="sidebar">
+        <div class="sidebar-header">
+            <h2>Foydalanuvchilar</h2>
+            <p id="current-user-display">Siz: ...</p>
+        </div>
+        <ul id="user-list">
+            <!-- Foydalanuvchilar shu yerga tushadi -->
+        </ul>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app';
+        
+        if (firebaseConfig.apiKey) {
+            firebase.initializeApp(firebaseConfig);
+        } else {
+            console.error("Firebase config yo'q.");
+        }
+
+        const db = firebase.firestore();
+        const auth = firebase.auth();
+        const messagesRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('messages');
+        const usersRef = db.collection('artifacts').doc(appId).collection('public').doc('data').collection('users');
+
+        let currentUser = localStorage.getItem('chat_username') || "";
+        let userId = null;
+
+        // --- LOGIN ---
+        function login() {
+            const input = document.getElementById('username-input');
+            const name = input.value.trim();
+
+            if (name) {
+                currentUser = name;
+                localStorage.setItem('chat_username', name);
+
+                auth.signInAnonymously().then((cred) => {
+                    userId = cred.user.uid;
+                    
+                    // Userni bazaga yozish (yoki yangilash)
+                    saveUserToDB(userId, currentUser);
+
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('chat-screen').style.display = 'flex';
+                    document.getElementById('current-user-display').innerText = "Siz: " + currentUser;
+
+                    startListeners();
+                }).catch(e => alert("Xato: " + e.message));
+            } else {
+                alert("Ism kiritilmadi!");
+            }
+        }
+
+        function saveUserToDB(uid, name) {
+            usersRef.doc(uid).set({
+                name: name,
+                lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        }
+
+        if(currentUser) document.getElementById('username-input').value = currentUser;
+
+        // --- XABARLAR & USERLARNI TINGLASH ---
+        function startListeners() {
+            // 1. Xabarlar
+            messagesRef.orderBy('timestamp', 'asc').onSnapshot(snapshot => {
+                const container = document.getElementById('messages-container');
+                container.innerHTML = '';
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    renderMessage(container, data);
+                });
+                
+                scrollToBottom();
+            });
+
+            // 2. Foydalanuvchilar ro'yxati
+            usersRef.orderBy('lastSeen', 'desc').onSnapshot(snapshot => {
+                const list = document.getElementById('user-list');
+                list.innerHTML = '';
+                let count = 0;
+
+                snapshot.forEach(doc => {
+                    const user = doc.data();
+                    count++;
+                    const li = document.createElement('li');
+                    li.className = 'user-item';
+                    
+                    // Avatarga ismni birinchi harfini qo'yish
+                    const firstLetter = user.name ? user.name.charAt(0) : '?';
+                    
+                    li.innerHTML = `
+                        <div class="avatar">${firstLetter}</div>
+                        <div class="user-name">
+                            ${user.name} 
+                            ${user.name === currentUser ? '<span style="color:#7cb3f5; font-size:12px">(Siz)</span>' : ''}
+                        </div>
+                    `;
+                    list.appendChild(li);
+                });
+                
+                document.getElementById('online-count').innerText = count + " ta a'zo";
+            });
+        }
+
+        function renderMessage(container, data) {
+            if(!data.text) return;
+            const div = document.createElement('div');
+            const isMe = data.sender === currentUser;
+            div.className = isMe ? 'message my-message' : 'message other-message';
+
+            let timeStr = "";
+            if (data.timestamp) {
+                const d = data.timestamp.toDate();
+                timeStr = d.getHours().toString().padStart(2,0) + ':' + d.getMinutes().toString().padStart(2,0);
+            }
+
+            div.innerHTML = `
+                ${!isMe ? `<span class="sender">${data.sender}</span>` : ''}
+                ${data.text}
+                <span class="time">${timeStr}</span>
+            `;
+            container.appendChild(div);
+        }
+
+        // --- INTERAKTIV ---
+        async function sendMessage() {
+            const input = document.getElementById('msg-input');
+            const text = input.value.trim();
+            if (text && userId) {
+                input.value = '';
+                await messagesRef.add({
+                    text: text,
+                    sender: currentUser,
+                    senderId: userId,
+                    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                scrollToBottom();
+            }
+        }
+
+        function handleEnter(e) { if(e.key === 'Enter') sendMessage(); }
+
+        function scrollToBottom() {
+            const c = document.getElementById('messages-container');
+            setTimeout(() => c.scrollTop = c.scrollHeight, 100);
+        }
+
+        function toggleSidebar() {
+            const sb = document.getElementById('sidebar');
+            const bd = document.getElementById('backdrop');
+            sb.classList.toggle('open');
+            bd.classList.toggle('active');
+        }
+    </script>
+</body>
+</html>
+
+
